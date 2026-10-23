@@ -1166,11 +1166,14 @@ void SkiaRenderEngine::drawLayersInternal(
                     // semi-arbitrarily.
                     using BlurRegionList = ftl::SmallVector<BlurRegion, 4>;
                     ftl::SmallMap<uint32_t, BlurRegionList, 2> regionsPerRadius;
-                    for (const BlurRegion& region : layer.blurRegions) {
-                        if (region.blurRadius > 0) {
-                            const auto& [entry, _] = regionsPerRadius.try_emplace(region.blurRadius,
-                                                                                  BlurRegionList());
-                            entry->second.push_back(region);
+                    for (const bool panel : {true, false}) {
+                        for (const BlurRegion& region : layer.blurRegions) {
+                            if (region.blurRadius > 0 && (region.material >= 5) == panel) {
+                                const auto& [entry, _] =
+                                        regionsPerRadius.try_emplace(region.blurRadius,
+                                                                     BlurRegionList());
+                                entry->second.push_back(region);
+                            }
                         }
                     }
 
@@ -1181,7 +1184,7 @@ void SkiaRenderEngine::drawLayersInternal(
                                 mBlurFilter->drawBlurRegion(canvas, getBlurRRect(region),
                                                             region.blurRadius, 1.0f, region.alpha,
                                                             blurRect, temporaryBlurredImage,
-                                                            blurInput);
+                                                            blurInput, region.material);
                             };
 
                     // Reuse existing temporaryBlurredImage from background blur for any regions
