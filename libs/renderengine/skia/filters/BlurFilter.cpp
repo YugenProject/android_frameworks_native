@@ -416,10 +416,17 @@ static float densityScale() {
     return scale;
 }
 
+// Penguin Laboratory's navigator glass (its floating tab bar): a light frost whose rim bends what
+// lies behind it. The taskbar dock asks for it by name, so it is glass whatever Liquid Glass's
+// own switch and style say. The app draws the wash and the lit rim over it, as the Lab does.
+static constexpr int32_t kNavigatorMaterial = 12;
+
 // In the iOS style, the dock's material (11) is glass like iPadOS's dock and Search field, and
 // so is every other rounded slab outside COS's own materials. ColorOS's glass is frosted only.
 static bool iosGlass(const SkRRect& region, int32_t material, bool liquidGlass) {
-    if (region.isRect() || !liquidGlass || cosGlassStyle()) return false;
+    if (region.isRect()) return false;
+    if (material == kNavigatorMaterial) return true;
+    if (!liquidGlass || cosGlassStyle()) return false;
     return material == 11 || material == 0;
 }
 
@@ -627,7 +634,9 @@ void BlurFilter::drawBlurRegion(SkCanvas* canvas, const SkRRect& effectRegion,
         material = effectRegion.isRect() ? 5 : 1;
     }
 
-    if (material > 0 && mCosGlassEffect != nullptr) {
+    const bool navigator = material == kNavigatorMaterial && mLiquidGlassEffect != nullptr &&
+            !effectRegion.isRect();
+    if (material > 0 && !navigator && mCosGlassEffect != nullptr) {
         SkRuntimeShaderBuilder glass(mCosGlassEffect);
         glass.child("blurredInput") = blurShader;
         const CosGlassLayers& layers = cosGlassLayers(material);
@@ -678,7 +687,9 @@ void BlurFilter::drawBlurRegion(SkCanvas* canvas, const SkRRect& effectRegion,
 
     // Liquid Glass: rounded regions become glass slabs; whole-window blurs, such as the shade's,
     // keep the colours behind them vivid instead of greying them out, as iOS's materials do.
-    if (mLiquidGlass && material >= 0 && (!effectRegion.isRect() || blurRadius >= mMaxCrossFadeRadius)) {
+    if (navigator ||
+        (mLiquidGlass && material >= 0 &&
+         (!effectRegion.isRect() || blurRadius >= mMaxCrossFadeRadius))) {
         const bool slab = !effectRegion.isRect();
         const SkRect& rect = effectRegion.rect();
         const float radius = slab ? effectRegion.radii(SkRRect::kUpperLeft_Corner).fX : 0.0f;
@@ -702,12 +713,20 @@ void BlurFilter::drawBlurRegion(SkCanvas* canvas, const SkRRect& effectRegion,
         glass.uniform("radius") = radius;
         glass.uniform("band") = band;
         setLensUniforms(glass, glassLens(effectRegion, material, mLiquidGlass));
-        glass.uniform("rim") = slab ? tune("rim", 0.0f) : 0.0f;
-        // A whole window's backdrop, such as the shade's, gets iOS's vivid blur.
-        glass.uniform("saturation") = slab ? tune("slab_sat", 1.1f) : tune("window_sat", 0.5f);
-        glass.uniform("gain") = slab ? tune("slab_gain", 0.9f) : tune("window_gain", 1.04f);
-        glass.uniform("lift") = slab ? tune("slab_lift", 0.0f) : tune("window_lift", 0.02f);
-        glass.uniform("edgeClear") = tune("edge_clear", 0.08f);
+        glass.uniform("rim") = slab && !navigator ? tune("rim", 0.0f) : 0.0f;
+        if (navigator) {
+            // As the Lab's bar: the backdrop's own colours and brightness, only softened.
+            glass.uniform("saturation") = tune("nav_sat", 1.0f);
+            glass.uniform("gain") = tune("nav_gain", 1.0f);
+            glass.uniform("lift") = 0.0f;
+            glass.uniform("edgeClear") = tune("nav_edge_clear", 0.0f);
+        } else {
+            // A whole window's backdrop, such as the shade's, gets iOS's vivid blur.
+            glass.uniform("saturation") = slab ? tune("slab_sat", 1.1f) : tune("window_sat", 0.5f);
+            glass.uniform("gain") = slab ? tune("slab_gain", 0.9f) : tune("window_gain", 1.04f);
+            glass.uniform("lift") = slab ? tune("slab_lift", 0.0f) : tune("window_lift", 0.02f);
+            glass.uniform("edgeClear") = tune("edge_clear", 0.08f);
+        }
         paint.setShader(glass.makeShader());
         if (slab) {
             paint.setAntiAlias(true);
